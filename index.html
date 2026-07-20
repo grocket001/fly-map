@@ -1,0 +1,827 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Living Fly Map — Where, When & What to Tie On</title>
+<meta name="description" content="An interactive, seasonal map of fly fishing destinations with the top fly patterns, material recipes, and colorways for each species.">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<style>
+  :root {
+    --bg: #101614;
+    --panel: #18211d;
+    --panel-2: #1f2b25;
+    --line: #2c3a32;
+    --text: #e8e4d8;
+    --muted: #9aa79b;
+    --accent: #d99a3d;      /* river amber */
+    --peak: #d99a3d;
+    --good: #5f9e6e;
+    --fair: #47707f;
+    --off: #3a423c;
+    --font-head: Georgia, 'Times New Roman', serif;
+    --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: var(--font-body);
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ---------- Header ---------- */
+  header {
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    padding: 12px 18px;
+    background: linear-gradient(180deg, #16201b, #121a16);
+    border-bottom: 1px solid var(--line);
+    z-index: 1200;
+  }
+  .brand h1 { font-family: var(--font-head); font-size: 1.25rem; font-weight: 700; letter-spacing: .5px; color: var(--text); }
+  .brand h1 .hook { color: var(--accent); }
+  .brand p { font-size: .72rem; color: var(--muted); letter-spacing: .4px; text-transform: uppercase; }
+  .season-bar { display: flex; align-items: center; gap: 6px; margin-left: auto; flex-wrap: wrap; }
+  .season-bar .lbl { font-size: .72rem; color: var(--muted); margin-right: 4px; text-transform: uppercase; letter-spacing: .5px; }
+  .season-btn {
+    background: var(--panel-2); color: var(--muted);
+    border: 1px solid var(--line); border-radius: 999px;
+    padding: 5px 13px; font-size: .8rem; cursor: pointer; transition: all .15s;
+  }
+  .season-btn:hover { color: var(--text); border-color: var(--accent); }
+  .season-btn.active { background: var(--accent); color: #16110a; border-color: var(--accent); font-weight: 600; }
+
+  /* ---------- Layout ---------- */
+  #app { flex: 1; display: flex; min-height: 0; position: relative; }
+  #map { flex: 1; min-width: 0; background: #0d1311; }
+
+  /* ---------- Legend ---------- */
+  .legend {
+    position: absolute; left: 12px; bottom: 24px; z-index: 1000;
+    background: rgba(24,33,29,.92); border: 1px solid var(--line); border-radius: 8px;
+    padding: 10px 12px; font-size: .72rem; color: var(--muted); backdrop-filter: blur(4px);
+  }
+  .legend .row { display: flex; align-items: center; gap: 7px; margin-top: 4px; }
+  .legend .dot { width: 11px; height: 11px; border-radius: 50%; border: 2px solid rgba(255,255,255,.5); }
+  .legend .ttl { color: var(--text); font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
+
+  /* ---------- Markers ---------- */
+  .fish-marker { background: transparent; border: none; }
+  .fish-marker .pin {
+    width: 26px; height: 26px; border-radius: 50% 50% 50% 4px;
+    transform: rotate(-45deg);
+    border: 2px solid rgba(255,255,255,.75);
+    box-shadow: 0 3px 10px rgba(0,0,0,.55);
+    display: flex; align-items: center; justify-content: center;
+    transition: transform .15s;
+  }
+  .fish-marker .pin span { transform: rotate(45deg); font-size: 13px; }
+  .fish-marker:hover .pin { transform: rotate(-45deg) scale(1.18); }
+
+  /* ---------- Hover tooltip card ---------- */
+  .leaflet-tooltip.hovercard {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    color: var(--text); box-shadow: 0 10px 30px rgba(0,0,0,.55);
+    padding: 12px 16px; width: 540px; max-width: 540px; white-space: normal;
+  }
+  .leaflet-tooltip.hovercard::before { display: none; }
+  .hovercard .hc-grid { display: grid; grid-template-columns: 1fr 1.2fr; gap: 4px 18px; align-items: start; }
+  .hovercard .hc-right { border-left: 1px dashed var(--line); padding-left: 18px; }
+  .hovercard h3 { font-family: var(--font-head); font-size: 1.1rem; margin-bottom: 2px; line-height: 1.2; }
+  .hovercard .sp { color: var(--accent); font-size: .82rem; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
+  .hovercard .season { font-size: .82rem; color: var(--muted); margin-bottom: 5px; line-height: 1.35; }
+  .hovercard .topfly { font-size: .88rem; line-height: 1.4; }
+  .hovercard .topfly b { color: var(--text); }
+  .hovercard .chips { display: inline-flex; gap: 3px; vertical-align: middle; margin-left: 5px; }
+  .hovercard .chip, .panel .chip {
+    width: 13px; height: 13px; border-radius: 3px; display: inline-block;
+    border: 1px solid rgba(255,255,255,.25);
+  }
+  .hovercard .cta { font-size: .74rem; color: var(--muted); margin-top: 8px; padding-top: 6px; border-top: 1px dashed var(--line); font-style: italic; text-align: right; }
+  .hovercard .status { display: inline-block; font-size: .7rem; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; padding: 2px 9px; border-radius: 999px; margin-top: 7px; }
+  @media (max-width: 720px) {
+    .leaflet-tooltip.hovercard { width: 300px; max-width: 300px; }
+    .hovercard .hc-grid { grid-template-columns: 1fr; }
+    .hovercard .hc-right { border-left: none; padding-left: 0; margin-top: 6px; }
+  }
+
+  /* ---------- Detail panel ---------- */
+  .panel {
+    width: 430px; max-width: 100%; background: var(--panel);
+    border-left: 1px solid var(--line);
+    display: flex; flex-direction: column;
+    transform: translateX(100%); transition: transform .28s ease;
+    position: absolute; right: 0; top: 0; bottom: 0; z-index: 1100;
+  }
+  .panel.open { transform: translateX(0); }
+  .panel-head {
+    padding: 18px 20px 14px; border-bottom: 1px solid var(--line);
+    background: linear-gradient(180deg, var(--panel-2), var(--panel));
+  }
+  .panel-head .close {
+    float: right; background: none; border: 1px solid var(--line); color: var(--muted);
+    border-radius: 6px; width: 30px; height: 30px; font-size: 1rem; cursor: pointer;
+  }
+  .panel-head .close:hover { color: var(--text); border-color: var(--accent); }
+  .panel-head h2 { font-family: var(--font-head); font-size: 1.35rem; line-height: 1.2; }
+  .panel-head .meta { color: var(--accent); font-size: .8rem; font-weight: 600; text-transform: uppercase; letter-spacing: .6px; margin-top: 3px; }
+  .panel-head .waters { color: var(--muted); font-size: .78rem; margin-top: 3px; }
+  .panel-body { overflow-y: auto; padding: 16px 20px 30px; flex: 1; }
+  .panel-body::-webkit-scrollbar { width: 9px; }
+  .panel-body::-webkit-scrollbar-thumb { background: var(--line); border-radius: 6px; }
+
+  .blurb { font-size: .85rem; line-height: 1.5; color: #cfd6c8; }
+  .tactics { font-size: .78rem; line-height: 1.45; color: var(--muted); margin-top: 8px; padding: 9px 11px; background: var(--panel-2); border-left: 3px solid var(--accent); border-radius: 0 6px 6px 0; }
+
+  .cal { margin-top: 16px; }
+  .cal .lbl, .flies-h, .src-h { font-size: .7rem; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); margin-bottom: 7px; font-weight: 700; }
+  .cal-grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 3px; }
+  .cal-cell { height: 26px; border-radius: 4px; position: relative; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 2px; }
+  .cal-cell small { font-size: .56rem; color: rgba(255,255,255,.85); font-weight: 600; }
+  .cal-cell.now { outline: 2px solid var(--text); outline-offset: 1px; }
+  .cal-note { font-size: .74rem; color: var(--muted); margin-top: 7px; line-height: 1.4; }
+
+  .flies-h { margin-top: 22px; }
+  .fly-card {
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px;
+    margin-bottom: 12px; overflow: hidden;
+  }
+  .fly-card > summary {
+    list-style: none; cursor: pointer; padding: 12px 14px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .fly-card > summary::-webkit-details-marker { display: none; }
+  .fly-rank {
+    flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%;
+    background: var(--accent); color: #16110a; font-weight: 700; font-size: .82rem;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .fly-title { flex: 1; min-width: 0; }
+  .fly-title b { font-size: .95rem; display: block; }
+  .fly-title i { font-size: .72rem; color: var(--muted); font-style: normal; }
+  .fly-caret { color: var(--muted); font-size: .8rem; transition: transform .2s; }
+  details[open] .fly-caret { transform: rotate(90deg); }
+  .fly-detail { padding: 0 14px 14px; border-top: 1px dashed var(--line); }
+  .cw { margin-top: 12px; }
+  .cw-row { display: flex; align-items: center; gap: 8px; font-size: .8rem; margin-bottom: 6px; }
+  .cw-row .chips { display: flex; gap: 4px; flex-shrink: 0; }
+  .cw-row .chip { width: 16px; height: 16px; border-radius: 4px; }
+  .cw-row.top b { color: var(--accent); }
+  .cw-tag { font-size: .62rem; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; padding: 1px 7px; border-radius: 999px; flex-shrink: 0; }
+  .cw-tag.t1 { background: rgba(217,154,61,.18); color: var(--accent); border: 1px solid rgba(217,154,61,.4); }
+  .cw-tag.alt { background: rgba(154,167,155,.12); color: var(--muted); border: 1px solid var(--line); }
+  .recipe { margin-top: 12px; }
+  .recipe .r-h { font-size: .68rem; text-transform: uppercase; letter-spacing: .7px; color: var(--muted); font-weight: 700; margin-bottom: 6px; }
+  .recipe ul { list-style: none; }
+  .recipe li { font-size: .78rem; line-height: 1.5; color: #cfd6c8; padding-left: 14px; position: relative; }
+  .recipe li::before { content: "›"; position: absolute; left: 0; color: var(--accent); }
+  .fly-link { display: inline-block; margin-top: 12px; font-size: .78rem; color: var(--accent); text-decoration: none; border-bottom: 1px dotted var(--accent); }
+  .fly-link:hover { color: #f0b968; }
+
+  .src-h { margin-top: 20px; }
+  .src a { display: block; font-size: .74rem; color: var(--muted); text-decoration: none; margin-bottom: 5px; }
+  .src a:hover { color: var(--accent); }
+
+  footer.credit {
+    padding: 6px 18px; font-size: .66rem; color: #5d6a5f;
+    background: #0f1512; border-top: 1px solid var(--line);
+    display: flex; justify-content: space-between; flex-wrap: wrap; gap: 6px;
+  }
+
+  /* ---------- Mobile ---------- */
+  @media (max-width: 720px) {
+    header { padding: 10px 12px; gap: 8px; }
+    .season-bar { margin-left: 0; width: 100%; }
+    .panel { width: 100%; top: auto; height: 72%; border-left: none; border-top: 1px solid var(--line); border-radius: 14px 14px 0 0; transform: translateY(100%); }
+    .panel.open { transform: translateY(0); }
+    .legend { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <h1>The Living Fly Map <span class="hook">&#x1FA9D;</span></h1>
+    <p>Seasons &middot; Species &middot; The flies that fool them</p>
+  </div>
+  <div class="season-bar" id="seasonBar">
+    <span class="lbl">Season</span>
+    <!-- buttons injected -->
+  </div>
+</header>
+
+<div id="app">
+  <div id="map"></div>
+
+  <div class="legend">
+    <div class="ttl">Bite quality</div>
+    <div class="row"><span class="dot" style="background:var(--peak)"></span> Peak season</div>
+    <div class="row"><span class="dot" style="background:var(--good)"></span> Good fishing</div>
+    <div class="row"><span class="dot" style="background:var(--fair)"></span> Fair / sporadic</div>
+    <div class="row"><span class="dot" style="background:var(--off)"></span> Off season</div>
+  </div>
+
+  <aside class="panel" id="panel" aria-label="Location details">
+    <div class="panel-head">
+      <button class="close" id="panelClose" title="Close">&times;</button>
+      <h2 id="pName"></h2>
+      <div class="meta" id="pMeta"></div>
+      <div class="waters" id="pWaters"></div>
+    </div>
+    <div class="panel-body" id="pBody"></div>
+  </aside>
+</div>
+
+<footer class="credit">
+  <span id="footMeta"></span>
+  <span>Map data &copy; OpenStreetMap contributors &middot; Tiles &copy; Esri &amp; CARTO</span>
+</footer>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script>
+/* ============================================================
+   FLY FISHING MAP — DATA FILE
+   ------------------------------------------------------------
+   To add a new location: copy a location object, edit fields,
+   and add it to the "locations" array. No other code changes
+   needed — the map reads everything from this file.
+
+   months: 12 entries, Jan–Dec. Values: "peak" | "good" | "fair" | "off"
+   colorway chips: hex colors used to draw the little swatches.
+   ============================================================ */
+window.FLYFISH_DATA = {
+  "meta": {
+    "title": "The Living Fly Map",
+    "subtitle": "Seasons, species & the flies that fool them",
+    "version": "1.0.0",
+    "updated": "2026-07-19"
+  },
+  "locations": [
+    {
+      "id": "wa-olympic-peninsula",
+      "name": "Olympic Peninsula Rivers",
+      "region": "Washington, USA",
+      "waters": "Hoh, Sol Duc, Bogachiel & Quillayute rivers",
+      "coords": [47.87, -124.25],
+      "species": "Winter Steelhead",
+      "speciesIcon": "steelhead",
+      "type": "River / Swing water",
+      "months": ["good", "peak", "peak", "good", "off", "off", "off", "off", "off", "off", "fair", "good"],
+      "seasonSummary": "Nov–Apr, peak Feb–Mar when wild fish numbers crest and water temps hit 42–50°F",
+      "blurb": "The last great wild winter steelhead theater in the Lower 48. Rain-fed coastal rivers draining the Olympic rainforest — swing big flies on Skagit heads and sink tips between rain events.",
+      "tactics": "Spey/switch rods, Skagit heads, T-8 to T-14 tips. Dark flies in clear water, bright flies when the rivers carry color.",
+      "sources": [
+        { "label": "Anadromy Fly Fishing — Best OP Steelhead Flies", "url": "https://www.anadromyflyfishing.com/blog/best-steelhead-flies-proven-patterns-for-every-season-on-the-olympic-peninsula" },
+        { "label": "MidCurrent — OP Winter Steelhead Guide", "url": "https://midcurrent.com/v2/olympic-peninsula-winter-steelhead-february-fly-fishing-guide/" }
+      ],
+      "flies": [
+        {
+          "rank": 1,
+          "name": "Suskwa Poacher",
+          "style": "Egg-sucking intruder / shank fly",
+          "link": "https://www.wetflyswing.com/suskwa-poacher/",
+          "linkLabel": "Wet Fly Swing — tying tutorial & recipe",
+          "recipe": [
+            "Thread: 6/0 Uni, black + hot orange",
+            "Shank: 45 mm Waddington",
+            "Trailer: Senyo's Intruder Trailer Wire",
+            "Hook: Gamakatsu Octopus #4",
+            "Rear bump: Pink medium chenille",
+            "Rear station: Black marabou, blue Flashabou (6915), gold Flashabou (6906)",
+            "Body: Pearl Krystal Flash",
+            "Front bump: Pink medium chenille",
+            "Front station: Purple marabou, green/brown Flashabou (2016), blue Flashabou",
+            "Front hackle: Kingfisher blue schlappen",
+            "Head: Hot pink medium chenille",
+            "Eyes: Large bead chain"
+          ],
+          "topColor": { "label": "Original — Black/Purple w/ Pink", "chips": ["#1a1a1a", "#5b2d8e", "#ff4fa3"] },
+          "altColors": [
+            { "label": "Pink/Orange — winter water with color", "chips": ["#ff4fa3", "#ff7a1a"] },
+            { "label": "Purple/Olive — low, clear flows", "chips": ["#5b2d8e", "#6b7a2e"] }
+          ]
+        },
+        {
+          "rank": 2,
+          "name": "Intruder",
+          "style": "Shank-style swing fly (Ward/French/Howell)",
+          "link": "https://deneki.com/2010/04/the-intruder/",
+          "linkLabel": "Deneki Outdoors — Intruder history & construction",
+          "recipe": [
+            "Shank: 35–45 mm (or cut-off front hook)",
+            "Trailer: Senyo's wire or 30 lb FireLine loop",
+            "Hook: Octopus-style #2–4",
+            "Rear: Dubbing ball + ostrich herl station, marabou & Flashabou",
+            "Body: Flat braid or diamond braid",
+            "Front: Dubbing bump, long ostrich/marabou station, Flashabou accents",
+            "Collar: Guinea or schlappen",
+            "Eyes: Dumbbell (optional, for depth)"
+          ],
+          "topColor": { "label": "Black/Blue — clear water staple", "chips": ["#1a1a1a", "#1f4fd8"] },
+          "altColors": [
+            { "label": "Pink/Orange — high or stained water", "chips": ["#ff4fa3", "#ff7a1a"] },
+            { "label": "Purple/Black — mid clarity", "chips": ["#5b2d8e", "#1a1a1a"] }
+          ]
+        },
+        {
+          "rank": 3,
+          "name": "Hoh Bo Spey",
+          "style": "Sparse marabou spey (Charles St. Pierre)",
+          "link": "https://www.flytyer.com/hoh-bo-spey/",
+          "linkLabel": "Fly Tyer — full recipe & story",
+          "recipe": [
+            "Shank: 25 mm Waddington",
+            "Thread: UTC 140, black",
+            "Connection: 30 lb FireLine, smoke",
+            "Hook: Partridge Intruder #2",
+            "Butt: UV Ice Dub (bright accent color)",
+            "Body: UV Ice Dub (main color)",
+            "Rib/support: Guinea hen, dyed to match",
+            "Collar 1: Strung or spey marabou",
+            "Flash: Holographic tinsel",
+            "Collar 2: Lady Amherst fibers, dyed"
+          ],
+          "topColor": { "label": "Black/Blue — Hoh River standard", "chips": ["#1a1a1a", "#1f4fd8"] },
+          "altColors": [
+            { "label": "Purple/Pink — mid conditions", "chips": ["#5b2d8e", "#ff4fa3"] },
+            { "label": "Pink/Orange — after the rain", "chips": ["#ff4fa3", "#ff7a1a"] }
+          ]
+        },
+        {
+          "rank": 4,
+          "name": "Pick Yer Pocket",
+          "style": "Composite-loop swing fly (Jerry French)",
+          "link": "https://aquaflies.com/frenchflies",
+          "linkLabel": "Aqua Flies — Jerry French signature patterns",
+          "recipe": [
+            "Shank: 40 mm, with wire trailer + Octopus #2 hook",
+            "Rear station: Composite dubbing loop — STS trilobal dub, marabou & flash",
+            "Body: Flat braid",
+            "Front station: Composite loop — marabou, ostrich & Flashabou",
+            "Collar: Guinea",
+            "Eyes: Medium dumbbell",
+            "Head: Bright thread or dub"
+          ],
+          "topColor": { "label": "Orange — cloudy, cold water", "chips": ["#ff7a1a", "#c94a02"] },
+          "altColors": [
+            { "label": "Pink — winter brightness", "chips": ["#ff4fa3", "#ff8fc4"] },
+            { "label": "Black/Blue — clear water", "chips": ["#1a1a1a", "#1f4fd8"] }
+          ]
+        },
+        {
+          "rank": 5,
+          "name": "MOAL Leech",
+          "style": "Articulated rabbit leech (Derek Fergus)",
+          "link": "https://www.flytyer.com/best-guide-flies-winter-steelheading/",
+          "linkLabel": "Fly Tyer — best guide flies for winter steelhead",
+          "recipe": [
+            "Front shank: Gamakatsu T10-3H, cut at bend",
+            "Trailing hook: Gamakatsu Octopus #4",
+            "Connection: 20 lb Dacron loop",
+            "Thread: 3/0, to match body",
+            "Body: Crosscut rabbit zonker wrapped the full length (shank + connection)",
+            "Head: Cone or bead (optional weight)",
+            "Flash: A few strands of Flashabou (optional)"
+          ],
+          "topColor": { "label": "Black — the confidence color", "chips": ["#1a1a1a", "#333333"] },
+          "altColors": [
+            { "label": "Purple — mid clarity", "chips": ["#5b2d8e", "#3d1f66"] },
+            { "label": "Pink/Cerise — stained water", "chips": ["#ff4fa3", "#d6106e"] }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "tx-port-aransas",
+      "name": "Port Aransas Bays",
+      "region": "Texas, USA",
+      "waters": "Redfish Bay, Aransas Bay, Lighthouse Lakes & back lakes",
+      "coords": [27.83, -97.09],
+      "species": "Redfish (Red Drum)",
+      "speciesIcon": "redfish",
+      "type": "Saltwater flats / Bays",
+      "months": ["fair", "fair", "good", "good", "good", "good", "good", "good", "peak", "peak", "peak", "fair"],
+      "seasonSummary": "Year-round fishery; peak Sep–Nov when bull reds school in passes and back bays",
+      "blurb": "Skinny-water sight fishing across seagrass flats and mangrove back lakes. Tailing and cruising reds year-round, with the fall bull red run turning the passes electric.",
+      "tactics": "7–8 wt rods, floating lines, weedless patterns over grass. Short strips with long pauses — let the fly puff sand like a fleeing shrimp or crab.",
+      "sources": [
+        { "label": "Fly Fish Rockport — Port Aransas fly fishing", "url": "https://www.flyfishrockport.com/fly-fishing-port-aransas/" },
+        { "label": "Sight Cast Fishing Co. — Top 5 redfish flies", "url": "https://www.sightcastfishing.com/reports/top-5-redfish-flies" }
+      ],
+      "flies": [
+        {
+          "rank": 1,
+          "name": "Redfish Crack",
+          "style": "Shrimp/baitfish hybrid — Texas coast staple",
+          "link": "https://texasflyfishers.org/fly-patterns/redfish-crack/",
+          "linkLabel": "Texas Flyfishers of Houston — recipe & steps",
+          "recipe": [
+            "Hook: Mustad 34007 #2–4 (or C47D shrimp hook)",
+            "Thread: Flat waxed nylon, olive",
+            "Tail: Tan craft fur, barred with brown marker",
+            "Body: Orange cactus chenille (2–3 wraps)",
+            "Head: EP Streamer Brush, olive/red, fibers picked out and swept back",
+            "Eyes: Optional bead chain or lead, to match depth"
+          ],
+          "topColor": { "label": "Original — Tan/Orange/Olive", "chips": ["#c8a165", "#ff7a1a", "#6b7a2e"] },
+          "altColors": [
+            { "label": "Chartreuse/White — off-color water", "chips": ["#b6e51d", "#f2f2f2"] },
+            { "label": "Purple/Black — low light, muddy bays", "chips": ["#5b2d8e", "#1a1a1a"] }
+          ]
+        },
+        {
+          "rank": 2,
+          "name": "Clouser Minnow",
+          "style": "Weighted baitfish (Bob Clouser)",
+          "link": "https://wildwaterflyfishing.com/blogs/guides/clouser-minnow-fly-pattern",
+          "linkLabel": "Wild Water — Clouser colors, sizes & technique",
+          "recipe": [
+            "Hook: Mustad 34007 or SL12 #2–6",
+            "Thread: 3/0–6/0 to match wing",
+            "Eyes: Dumbbell, sized to depth (bead chain for skinny water)",
+            "Belly: White bucktail",
+            "Flash: Pearl or gold Krystal Flash",
+            "Wing: Chartreuse (or color of choice) bucktail"
+          ],
+          "topColor": { "label": "Chartreuse/White — the Texas standard", "chips": ["#b6e51d", "#f2f2f2"] },
+          "altColors": [
+            { "label": "Black/Purple — stained water & low sun", "chips": ["#1a1a1a", "#5b2d8e"] },
+            { "label": "Pink/Chartreuse — bright sand flats", "chips": ["#ff4fa3", "#b6e51d"] }
+          ]
+        },
+        {
+          "rank": 3,
+          "name": "Dupre Spoon Fly",
+          "style": "Epoxy spoon — wobbles like a Johnson spoon",
+          "link": "https://www.sightcastfishing.com/tutorials/tag/dupre+spoon+fly",
+          "linkLabel": "Sight Cast Fishing Co. — spoon fly tutorial",
+          "recipe": [
+            "Hook: Wide-gap saltwater #2–4",
+            "Body: Mylar/flash braid tubing flattened over the shank",
+            "Coating: Epoxy or UV resin, shaped into a spoon cup",
+            "Tail: Short flash or hackle accent (optional)",
+            "Weedguard: Titanium or hard mono wire",
+            "Note: Cure with a slight curve so it wobbles on the strip"
+          ],
+          "topColor": { "label": "Gold — grass flats classic", "chips": ["#d4a017", "#f0c541"] },
+          "altColors": [
+            { "label": "Copper — tannic back lakes", "chips": ["#b06a2c", "#8a4b1a"] },
+            { "label": "Chartreuse — dirty water visibility", "chips": ["#b6e51d", "#8ab80f"] }
+          ]
+        },
+        {
+          "rank": 4,
+          "name": "Kwan",
+          "style": "Shrimp/crab hybrid — sight-fishing workhorse",
+          "link": "https://cutty.fishing/patterns/kwan-fly",
+          "linkLabel": "Cutty — Kwan recipe & instructions",
+          "recipe": [
+            "Hook: TMC 811S #4–8",
+            "Thread: Brown UTC 140",
+            "Eyes: Medium silver bead chain",
+            "Tail: Tan craft fur or Pseudo Hair",
+            "Undertail: Brown hackle fibers",
+            "Body: Brown & tan EP Fiber or yarn, trimmed flat",
+            "Weedguard: 20–25 lb mono loop"
+          ],
+          "topColor": { "label": "Tan/Brown — matches everything on the flat", "chips": ["#c8a165", "#7a5230"] },
+          "altColors": [
+            { "label": "Black/Purple — flood light conditions", "chips": ["#1a1a1a", "#5b2d8e"] },
+            { "label": "Olive/Chartreuse — grassy bottoms", "chips": ["#6b7a2e", "#b6e51d"] }
+          ]
+        },
+        {
+          "rank": 5,
+          "name": "Grass Monkey",
+          "style": "Weedless grass-flat pattern",
+          "link": "https://blog.saltyflytying.com/grass-monkey-redfish-flies/",
+          "linkLabel": "Salty Fly Tying — Grass Monkey recipe",
+          "recipe": [
+            "Hook: Saltwater #2–4, weedless orientation",
+            "Thread: To match body",
+            "Tail: Craft fur or marabou with flash accents",
+            "Legs: Barred crazy legs",
+            "Body: Palmered brush or dubbing, trimmed",
+            "Eyes: Bead chain (rides light over grass)",
+            "Weedguard: Mono loop"
+          ],
+          "topColor": { "label": "Olive/Tan — seagrass natural", "chips": ["#6b7a2e", "#c8a165"] },
+          "altColors": [
+            { "label": "Black/Purple — muddy water contrast", "chips": ["#1a1a1a", "#5b2d8e"] },
+            { "label": "White/Chartreuse — sand pockets", "chips": ["#f2f2f2", "#b6e51d"] }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sc-charleston",
+      "name": "Charleston Harbor & Lowcountry Flats",
+      "region": "South Carolina, USA",
+      "waters": "Charleston Harbor, Wando, Ashley & Copahee Sound spartina flats",
+      "coords": [32.79, -79.89],
+      "species": "Redfish (Red Drum)",
+      "speciesIcon": "redfish",
+      "type": "Saltwater flats / Flood tides",
+      "months": ["good", "good", "fair", "fair", "good", "good", "good", "good", "peak", "peak", "good", "good"],
+      "seasonSummary": "Year-round; flood tides May–Oct with Sep–Oct the prime tailing months, big clear-water schools Dec–Feb",
+      "blurb": "The Lowcountry flood tide game: when big tides push over the spartina grass, redfish follow to root out fiddler crabs — tails waving in inches of water. Winter brings huge schools to clear shallow flats.",
+      "tactics": "8 wt, floating line, weedless crab patterns dropped a few feet ahead of a tailing fish. On floods, lead the fish and let the crab sit — then a single slow strip.",
+      "sources": [
+        { "label": "Ghost Water SC — Best Lowcountry redfish flies", "url": "https://www.ghostwatersc.com/captains-blog/the-best-redfish-flies-in-the-lowcountrycaptainsblog" },
+        { "label": "Salt Water Sportsman — Fly fishing Charleston redfish", "url": "https://www.saltwatersportsman.com/travel/north-america/fly-fishing-charleston-redfish/" }
+      ],
+      "flies": [
+        {
+          "rank": 1,
+          "name": "Copperhead Crab",
+          "style": "Flood tide crab (Capt. 'Mad Mike' Benson, Charleston)",
+          "link": "https://www.youtube.com/watch?v=zdD9KhBCzwU",
+          "linkLabel": "YouTube — Mad Mike ties the Copperhead Crab",
+          "recipe": [
+            "Hook: Gamakatsu SC15 or SL45 #2–4",
+            "Thread: Tan or copper 140 denier",
+            "Eyes: Medium bead chain or small dumbbell",
+            "Claws: Marabou tips + Flashabou accents",
+            "Legs: Barred crazy legs",
+            "Body: Copper Estaz / copper flash chenille",
+            "Weedguard: Mono loop (essential in the spartina)"
+          ],
+          "topColor": { "label": "Copper/Tan — the namesake", "chips": ["#b06a2c", "#c8a165"] },
+          "altColors": [
+            { "label": "Black/Purple — low-vis flood water", "chips": ["#1a1a1a", "#5b2d8e"] },
+            { "label": "Olive/Gold — winter clear water", "chips": ["#6b7a2e", "#d4a017"] }
+          ]
+        },
+        {
+          "rank": 2,
+          "name": "EP Crab",
+          "style": "Fiber crab (Enrico Puglisi style)",
+          "link": "https://blog.fishwest.com/fly-tying-tutorial-ep-crab/",
+          "linkLabel": "Fishwest — EP Crab tying tutorial",
+          "recipe": [
+            "Hook: Gamakatsu SL45 or SC15 #2–4",
+            "Thread: 140 denier, tan",
+            "Eyes: Mono crab eyes + bead chain/dumbbell for keel",
+            "Claws: Hackle tips or marabou",
+            "Legs: Rubber/silicone legs, barred",
+            "Body: EP Fibers tied in cross sections, trimmed to crab silhouette",
+            "Weedguard: Mono loop"
+          ],
+          "topColor": { "label": "Tan — sand & mud flats", "chips": ["#c8a165", "#e0c493"] },
+          "altColors": [
+            { "label": "Olive — grass flats", "chips": ["#6b7a2e", "#4d5a1e"] },
+            { "label": "Brown/Orange — fiddler crab match", "chips": ["#7a5230", "#ff7a1a"] }
+          ]
+        },
+        {
+          "rank": 3,
+          "name": "Del Brown's Merkin",
+          "style": "Yarn crab — the original permit crab, deadly on reds",
+          "link": "https://themissionflymag.com/del-browns-merkin-crab-sbs/",
+          "linkLabel": "The Mission — Merkin step-by-step",
+          "recipe": [
+            "Hook: Standard saltwater #2–6",
+            "Thread: Chartreuse flat waxed (Del's signature)",
+            "Eyes: Lead dumbbell (fly rides hook-up)",
+            "Tail/claws: Splayed hackle tips + flash",
+            "Body: Rug yarn strands tied square to the shank, trimmed oval",
+            "Legs: White round rubber, tipped red",
+            "Weedguard: Optional mono"
+          ],
+          "topColor": { "label": "Tan/Brown — classic", "chips": ["#c8a165", "#7a5230"] },
+          "altColors": [
+            { "label": "Olive — spartina grass", "chips": ["#6b7a2e", "#8a9a3e"] },
+            { "label": "Chartreuse — stained harbor water", "chips": ["#b6e51d", "#8ab80f"] }
+          ]
+        },
+        {
+          "rank": 4,
+          "name": "Redfish Toad",
+          "style": "Toad-style tailing fly",
+          "link": "https://www.microskiff.com/threads/redfish-toad-tying-instruction.21280/",
+          "linkLabel": "Microskiff — Redfish Toad tying instruction",
+          "recipe": [
+            "Hook: Gamakatsu SC15 #2",
+            "Thread: UTC 70, olive",
+            "Eyes: Medium lead, coated (Hard as Hull)",
+            "Tail: Jailhouse (barred) marabou, olive",
+            "Collar: Brown crosscut rabbit strip",
+            "Body: EP 3-D fibers + Nearnuff Sculpin dubbing, figure-8 wrapped and trimmed",
+            "Weedguard: 16 lb Mason mono"
+          ],
+          "topColor": { "label": "Olive/Brown — flood tide natural", "chips": ["#6b7a2e", "#7a5230"] },
+          "altColors": [
+            { "label": "Black/Purple — the SC flood classic", "chips": ["#1a1a1a", "#5b2d8e"] },
+            { "label": "Tan/Orange — sunny sand flats", "chips": ["#c8a165", "#ff7a1a"] }
+          ]
+        },
+        {
+          "rank": 5,
+          "name": "Gartside Gurgler",
+          "style": "Foam topwater (Jack Gartside)",
+          "link": "https://charliesflybox.com/blogs/step-by-step-tutorials/gartside-s-gurgler",
+          "linkLabel": "Charlie's Fly Box — Gurgler step-by-step",
+          "recipe": [
+            "Hook: TMC 811S #1/0–6",
+            "Thread: UTC 140–280",
+            "Tail: Bucktail",
+            "Flash: Pearl Krystal Flash",
+            "Shellback/lip: 1/4\" open-cell foam strip",
+            "Body: Pearl tinsel chenille",
+            "Hackle: Palmered neck hackle"
+          ],
+          "topColor": { "label": "Tan/White — shrimp on top", "chips": ["#c8a165", "#f2f2f2"] },
+          "altColors": [
+            { "label": "Black/Purple — dawn & overcast floods", "chips": ["#1a1a1a", "#5b2d8e"] },
+            { "label": "Chartreuse — attention getter", "chips": ["#b6e51d", "#8ab80f"] }
+          ]
+        }
+      ]
+    }
+  ]
+};
+
+</script>
+<script>
+(function () {
+  "use strict";
+  const DATA = window.FLYFISH_DATA;
+  if (!DATA) { document.body.innerHTML = "<p style='padding:2rem'>Could not load data/locations.js</p>"; return; }
+
+  const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const STATUS_COLOR = { peak: "#d99a3d", good: "#5f9e6e", fair: "#47707f", off: "#3a423c" };
+  const STATUS_LABEL = { peak: "Peak season", good: "Good fishing", fair: "Fair / sporadic", off: "Off season" };
+  const SEASONS = [
+    { id: "now",    label: "Right now", months: [new Date().getMonth()] },
+    { id: "winter", label: "Winter",    months: [11, 0, 1] },
+    { id: "spring", label: "Spring",    months: [2, 3, 4] },
+    { id: "summer", label: "Summer",    months: [5, 6, 7] },
+    { id: "fall",   label: "Fall",      months: [8, 9, 10] },
+    { id: "all",    label: "All year",  months: [0,1,2,3,4,5,6,7,8,9,10,11] }
+  ];
+  const RANKV = { off: 0, fair: 1, good: 2, peak: 3 };
+  let activeSeason = "now";
+  const markers = {};
+
+  /* ---------- Map ---------- */
+  const map = L.map("map", { zoomControl: true, worldCopyJump: true })
+    .setView([38.5, -96.5], 4); // continental US; world-ready for future adds
+
+  const terrain = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}", {
+    attribution: "Tiles &copy; Esri — Esri, USGS, NOAA", maxZoom: 16
+  }).addTo(map);
+  const satellite = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
+    attribution: "Tiles &copy; Esri — Source: Esri, Maxar, Earthstar Geographics", maxZoom: 18
+  });
+  const dark = L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+    attribution: "&copy; OpenStreetMap contributors &copy; CARTO", maxZoom: 19
+  });
+  L.control.layers({ "Terrain": terrain, "Satellite": satellite, "Night": dark }, null, { position: "topright" }).addTo(map);
+
+  /* ---------- Season helpers ---------- */
+  function seasonMonths() { return SEASONS.find(s => s.id === activeSeason).months; }
+  function bestStatusFor(loc, months) {
+    let best = "off";
+    months.forEach(m => { if (RANKV[loc.months[m]] > RANKV[best]) best = loc.months[m]; });
+    return best;
+  }
+
+  /* ---------- Markers ---------- */
+  const fishEmoji = { steelhead: "&#x1F3A3;", redfish: "&#x1F41F;" };
+  function markerIcon(status, icon) {
+    return L.divIcon({
+      className: "fish-marker",
+      iconSize: [26, 26], iconAnchor: [13, 24], tooltipAnchor: [14, -14],
+      html: `<div class="pin" style="background:${STATUS_COLOR[status]}"><span>${fishEmoji[icon] || "&#x1F41F;"}</span></div>`
+    });
+  }
+
+  function hoverHTML(loc) {
+    const status = bestStatusFor(loc, seasonMonths());
+    const top = loc.flies[0];
+    const chips = top.topColor.chips.map(c => `<span class="chip" style="background:${c}"></span>`).join("");
+    return `
+      <div class="hc-grid">
+        <div class="hc-left">
+          <h3>${loc.name}</h3>
+          <div class="sp">${loc.species}</div>
+          <span class="status" style="background:${STATUS_COLOR[status]}22;color:${STATUS_COLOR[status]};border:1px solid ${STATUS_COLOR[status]}66">${STATUS_LABEL[status]} &middot; ${SEASONS.find(s=>s.id===activeSeason).label}</span>
+        </div>
+        <div class="hc-right">
+          <div class="season">&#x1F4C5; ${loc.seasonSummary}</div>
+          <div class="topfly">&#x1F3C6; Top fly: <b>${top.name}</b><span class="chips">${chips}</span>
+          <span style="color:var(--muted);font-size:.78rem"> — ${top.topColor.label}</span></div>
+        </div>
+      </div>
+      <div class="cta">Click the pin for all 5 flies + recipes &rarr;</div>`;
+  }
+
+  function buildMarkers() {
+    DATA.locations.forEach(loc => {
+      const status = bestStatusFor(loc, seasonMonths());
+      const m = L.marker(loc.coords, { icon: markerIcon(status, loc.speciesIcon), riseOnHover: true }).addTo(map);
+      m.bindTooltip(hoverHTML(loc), { className: "hovercard", direction: "right", opacity: 1, sticky: false });
+      m.on("click", () => openPanel(loc));
+      markers[loc.id] = m;
+    });
+  }
+  function refreshMarkers() {
+    DATA.locations.forEach(loc => {
+      const status = bestStatusFor(loc, seasonMonths());
+      const m = markers[loc.id];
+      m.setIcon(markerIcon(status, loc.speciesIcon));
+      m.setTooltipContent(hoverHTML(loc));
+    });
+  }
+
+  /* ---------- Season bar ---------- */
+  const bar = document.getElementById("seasonBar");
+  SEASONS.forEach(s => {
+    const b = document.createElement("button");
+    b.className = "season-btn" + (s.id === activeSeason ? " active" : "");
+    b.textContent = s.id === "now" ? `Right now (${MONTHS[new Date().getMonth()]})` : s.label;
+    b.onclick = () => {
+      activeSeason = s.id;
+      bar.querySelectorAll(".season-btn").forEach(x => x.classList.remove("active"));
+      b.classList.add("active");
+      refreshMarkers();
+    };
+    bar.appendChild(b);
+  });
+
+  /* ---------- Detail panel ---------- */
+  const panel = document.getElementById("panel");
+  document.getElementById("panelClose").onclick = () => panel.classList.remove("open");
+  map.on("click", () => panel.classList.remove("open"));
+
+  function chipRow(cw, isTop) {
+    const chips = cw.chips.map(c => `<span class="chip" style="background:${c}"></span>`).join("");
+    return `<div class="cw-row${isTop ? " top" : ""}">
+      <span class="cw-tag ${isTop ? "t1" : "alt"}">${isTop ? "Top pick" : "Alt"}</span>
+      <span class="chips">${chips}</span>
+      <span>${isTop ? "<b>" + cw.label + "</b>" : cw.label}</span>
+    </div>`;
+  }
+
+  function openPanel(loc) {
+    document.getElementById("pName").textContent = loc.name;
+    document.getElementById("pMeta").textContent = `${loc.species} · ${loc.region}`;
+    document.getElementById("pWaters").textContent = loc.waters;
+
+    const nowM = new Date().getMonth();
+    const cal = loc.months.map((st, i) =>
+      `<div class="cal-cell${i === nowM ? " now" : ""}" style="background:${STATUS_COLOR[st]}" title="${MONTHS[i]}: ${STATUS_LABEL[st]}"><small>${MONTHS[i][0]}</small></div>`
+    ).join("");
+
+    const flies = loc.flies.map((f, idx) => `
+      <details class="fly-card"${idx === 0 ? " open" : ""}>
+        <summary>
+          <span class="fly-rank">${f.rank}</span>
+          <span class="fly-title"><b>${f.name}</b><i>${f.style}</i></span>
+          <span class="fly-caret">&#x276F;</span>
+        </summary>
+        <div class="fly-detail">
+          <div class="cw">
+            ${chipRow(f.topColor, true)}
+            ${f.altColors.map(a => chipRow(a, false)).join("")}
+          </div>
+          <div class="recipe">
+            <div class="r-h">Material recipe</div>
+            <ul>${f.recipe.map(r => `<li>${r}</li>`).join("")}</ul>
+          </div>
+          <a class="fly-link" href="${f.link}" target="_blank" rel="noopener">${f.linkLabel} &nearr;</a>
+        </div>
+      </details>`).join("");
+
+    const sources = (loc.sources || []).map(s =>
+      `<a href="${s.url}" target="_blank" rel="noopener">&#x1F517; ${s.label}</a>`).join("");
+
+    document.getElementById("pBody").innerHTML = `
+      <p class="blurb">${loc.blurb}</p>
+      <p class="tactics"><b>Tactics:</b> ${loc.tactics}</p>
+      <div class="cal">
+        <div class="lbl">Season calendar</div>
+        <div class="cal-grid">${cal}</div>
+        <div class="cal-note">&#x1F4C5; ${loc.seasonSummary}. Outlined box = current month.</div>
+      </div>
+      <div class="flies-h">Top 5 flies — click each to expand</div>
+      ${flies}
+      <div class="src-h">Location sources</div>
+      <div class="src">${sources}</div>`;
+
+    panel.classList.add("open");
+    document.getElementById("pBody").scrollTop = 0;
+  }
+
+  /* ---------- Boot ---------- */
+  buildMarkers();
+  document.getElementById("footMeta").textContent =
+    `${DATA.meta.title} v${DATA.meta.version} · ${DATA.locations.length} locations · updated ${DATA.meta.updated}`;
+})();
+</script>
+</body>
+</html>
