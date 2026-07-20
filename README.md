@@ -46,4 +46,4 @@ No other changes needed — the map, hover cards, season filter, and detail pane
 - Photos per fly pattern (add an `img` field and an `<img>` tag in the fly card)
 - Marker clustering once you pass ~50 spots (Leaflet.markercluster plugin)
 - Split the data block back into a separate JSON file once the site is hosted (fetch works over http; it was inlined so the file also works when opened directly)
-- Hatch charts, river flow links (USGS gauges), tide charts 
+- Hatch charts, river flow links (USGS gauges), tide charts  
