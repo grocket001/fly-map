@@ -41,7 +41,7 @@ Copy an existing location object (from `{` to `},`), paste it into the `location
 
 No other changes needed — the map, hover cards, season filter, and detail panel all render from that block. International spots work too; the map isn't limited to the US.
 
-## Roadmap ideas
+## Roadmap ideas 
 
 - Photos per fly pattern (add an `img` field and an `<img>` tag in the fly card)
 - Marker clustering once you pass ~50 spots (Leaflet.markercluster plugin)
